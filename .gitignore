@@ -1,0 +1,19 @@
+# node_modules
+node_modules/
+
+# билд
+dist/
+
+# логи
+*.log
+npm-debug.log*
+
+# env
+.env
+.env.*.local
+
+# IDE и OS
+.vscode/
+.idea/
+*.iml
+.DS_Store
