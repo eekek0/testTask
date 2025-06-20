@@ -5,10 +5,13 @@ import {
   ManyToOne,
   OneToMany,
   RelationId,
+  RelationCount,
 } from 'typeorm';
 import { Exclude, Expose } from 'class-transformer';
 import { Comment } from './comment.entity';
 import { User } from '../../users/user.entity';
+import { Like } from './like.entity';
+import { Dislike } from './dislike.entity';
 
 @Entity()
 export class Post {
@@ -23,6 +26,21 @@ export class Post {
 
   @OneToMany(() => Comment, (comment) => comment.post, { cascade: true })
   comments: Comment[];
+
+  @OneToMany(() => Like, (like) => like.post, { cascade: true })
+  likes: Like[];
+
+  @RelationCount((post: Post) => post.likes)
+  @Expose()
+  likesCount: number;
+
+  @OneToMany(() => Dislike, (dislike) => dislike.post, { cascade: true })
+  dislikes: Dislike[];
+
+  @RelationCount((post: Post) => post.dislikes)
+  @Expose()
+  dislikesCount: number;
+
   @ManyToOne(() => User, (user) => user.posts)
   @Exclude()
   author: User;

@@ -8,6 +8,8 @@ import { Repository } from 'typeorm';
 import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
 import { User } from '../../users/user.entity';
+import { Like } from '../entities/like.entity';
+import { Dislike } from '../entities/dislike.entity';
 
 @Injectable()
 export class PostsService {
@@ -18,6 +20,10 @@ export class PostsService {
     private readonly commentRepository: Repository<Comment>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Like)
+    private likeRepo: Repository<Like>,
+    @InjectRepository(Dislike)
+    private dislikeRepo: Repository<Dislike>,
   ) {}
 
   async create(
@@ -35,7 +41,7 @@ export class PostsService {
   }
 
   async findAll(): Promise<Post[]> {
-    return await this.postRepository.find({
+    return this.postRepository.find({
       relations: ['comments', 'author'],
     });
   }
@@ -138,5 +144,53 @@ export class PostsService {
       );
     }
     await this.commentRepository.delete(commentId);
+  }
+
+  async like(postId: number, user: User): Promise<void> {
+    await this.dislikeRepo.delete({
+      post: { id: postId },
+      author: { id: user.id },
+    });
+    const exists = await this.likeRepo.findOne({
+      where: { post: { id: postId }, author: { id: user.id } },
+    });
+    if (!exists) {
+      const like = this.likeRepo.create({
+        post: { id: postId } as Post,
+        author: user,
+      });
+      await this.likeRepo.save(like);
+    }
+  }
+
+  async unlike(postId: number, user: User): Promise<void> {
+    await this.likeRepo.delete({
+      post: { id: postId },
+      author: { id: user.id },
+    });
+  }
+
+  async dislike(postId: number, user: User): Promise<void> {
+    await this.likeRepo.delete({
+      post: { id: postId },
+      author: { id: user.id },
+    });
+    const exists = await this.dislikeRepo.findOne({
+      where: { post: { id: postId }, author: { id: user.id } },
+    });
+    if (!exists) {
+      const dislike = this.dislikeRepo.create({
+        post: { id: postId } as Post,
+        author: user,
+      });
+      await this.dislikeRepo.save(dislike);
+    }
+  }
+
+  async undislike(postId: number, user: User): Promise<void> {
+    await this.dislikeRepo.delete({
+      post: { id: postId },
+      author: { id: user.id },
+    });
   }
 }

@@ -16,6 +16,7 @@ import { Comment } from './blog/entities/comment.entity';
       password: process.env.DB_PASS || 'password',
       database: process.env.DB_NAME || 'blog_db',
       entities: [User, Post, Comment],
+      autoLoadEntities: true,
       synchronize: true,
       dropSchema: true,
     }),
