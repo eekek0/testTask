@@ -4,12 +4,20 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
 import { User } from '../../users/user.entity';
 import { Like } from '../entities/like.entity';
 import { Dislike } from '../entities/dislike.entity';
+import { GetPostsFilterDto } from './dto/get-posts-filter.dto';
+
+export interface PaginatedPosts {
+  data: Post[];
+  total: number;
+  page: number;
+  limit: number;
+}
 
 @Injectable()
 export class PostsService {
@@ -40,10 +48,21 @@ export class PostsService {
     return await this.postRepository.save(post);
   }
 
-  async findAll(): Promise<Post[]> {
-    return this.postRepository.find({
-      relations: ['comments', 'author'],
+  async findAll(filterDto: GetPostsFilterDto): Promise<PaginatedPosts> {
+    const { search, page = 1 } = filterDto;
+    const limit = 1;
+    const skip = (page - 1) * limit;
+
+    const where = search ? { title: ILike(`%${search}%`) } : {};
+
+    const [data, total] = await this.postRepository.findAndCount({
+      where,
+      skip,
+      take: limit,
+      relations: ['author', 'comments'],
     });
+
+    return { data, total, page, limit };
   }
 
   async findByAuthor(user: User): Promise<Post[]> {
@@ -192,5 +211,24 @@ export class PostsService {
       post: { id: postId },
       author: { id: user.id },
     });
+  }
+
+  async findAllWithFilter(
+    filterDto: GetPostsFilterDto,
+  ): Promise<PaginatedPosts> {
+    const { search, page = 1 } = filterDto;
+    const limit = 1;
+    const skip = (page - 1) * limit;
+
+    const where = search ? { title: ILike(`%${search}%`) } : {};
+
+    const [data, total] = await this.postRepository.findAndCount({
+      where,
+      skip,
+      take: limit,
+      relations: ['author', 'comments'],
+    });
+
+    return { data, total, page, limit };
   }
 }

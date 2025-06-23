@@ -7,6 +7,7 @@ import {
   Param,
   Body,
   UseGuards,
+  Query,
   ParseIntPipe,
 } from '@nestjs/common';
 import {
@@ -16,6 +17,9 @@ import {
   ApiBody,
   ApiResponse,
   ApiBearerAuth,
+  ApiQuery,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { PostsService } from './posts.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
@@ -23,21 +27,43 @@ import { Post as PostEntity } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
 import { GetUser } from '../../auth/get-user.decorator';
 import { User } from '../../users/user.entity';
+import { GetPostsFilterDto } from './dto/get-posts-filter.dto';
 
 @ApiTags('Posts')
+@ApiExtraModels(PostEntity)
 @Controller('posts')
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
-  @ApiOperation({ summary: 'Получение списка всех постов' })
+  @ApiOperation({
+    summary: 'Список постов (фильтр по title + 1 на странице)',
+  })
+  @ApiQuery({ name: 'search', required: false, description: 'По title' })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiResponse({
     status: 200,
-    description: 'Список постов',
-    type: [PostEntity],
+    description: 'Пагинированный список постов',
+    schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(PostEntity) },
+        },
+        total: { type: 'number', example: 42 },
+        page: { type: 'number', example: 2 },
+        limit: { type: 'number', example: 1 },
+      },
+    },
   })
   @Get()
-  async getAll(): Promise<PostEntity[]> {
-    return this.postsService.findAll();
+  async getAll(@Query() filterDto: GetPostsFilterDto): Promise<{
+    data: PostEntity[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    return this.postsService.findAll(filterDto);
   }
 
   @ApiBearerAuth()
