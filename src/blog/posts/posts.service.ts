@@ -4,13 +4,15 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { ILike, In, Repository } from 'typeorm';
 import { Post } from '../entities/post.entity';
 import { Comment } from '../entities/comment.entity';
 import { User } from '../../users/user.entity';
 import { Like } from '../entities/like.entity';
 import { Dislike } from '../entities/dislike.entity';
 import { GetPostsFilterDto } from './dto/get-posts-filter.dto';
+import { GetPostsByKeywordsDto } from './dto/get-posts-by-keywords.dto';
+import { Keyword } from '../entities/keyword.entity';
 
 export interface PaginatedPosts {
   data: Post[];
@@ -32,10 +34,12 @@ export class PostsService {
     private likeRepo: Repository<Like>,
     @InjectRepository(Dislike)
     private dislikeRepo: Repository<Dislike>,
+    @InjectRepository(Keyword)
+    private readonly keywordRepo: Repository<Keyword>,
   ) {}
 
   async create(
-    postData: { title: string; description: string },
+    postData: { title: string; description: string; keywords?: string[] },
     user: User,
   ): Promise<Post> {
     const author = await this.userRepository.findOne({
@@ -44,8 +48,29 @@ export class PostsService {
     if (!author) {
       throw new NotFoundException('Автор не найден');
     }
-    const post = this.postRepository.create({ ...postData, author });
-    return await this.postRepository.save(post);
+
+    let keywordsEntities: Keyword[] = [];
+    if (postData.keywords?.length) {
+      const names = Array.from(new Set(postData.keywords.map((s) => s.trim())));
+      const existing = await this.keywordRepo.find({
+        where: { name: In(names) },
+      });
+      const existingNames = existing.map((k) => k.name);
+      const toCreate = names.filter((n) => !existingNames.includes(n));
+      const newEntities = this.keywordRepo.create(
+        toCreate.map((n) => ({ name: n })),
+      );
+      await this.keywordRepo.save(newEntities);
+      keywordsEntities = [...existing, ...newEntities];
+    }
+
+    const post = this.postRepository.create({
+      title: postData.title,
+      description: postData.description,
+      author,
+      keywords: keywordsEntities,
+    });
+    return this.postRepository.save(post);
   }
 
   async findAll(filterDto: GetPostsFilterDto): Promise<PaginatedPosts> {
@@ -229,6 +254,37 @@ export class PostsService {
       relations: ['author', 'comments'],
     });
 
+    return { data, total, page, limit };
+  }
+
+  async findByKeywords(
+    dto: GetPostsByKeywordsDto,
+  ): Promise<{ data: Post[]; total: number; page: number; limit: number }> {
+    const { keywords, page = 1 } = dto;
+    const limit = 1;
+    const skip = (page - 1) * limit;
+
+    const tags = keywords
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (!tags.length) {
+      throw new NotFoundException('Нет ключевых слов для поиска');
+    }
+
+    const qb = this.postRepository
+      .createQueryBuilder('post')
+      .leftJoinAndSelect('post.author', 'author')
+      .leftJoinAndSelect('post.keywords', 'kw')
+      .loadRelationCountAndMap('post.likesCount', 'post.likes')
+      .loadRelationCountAndMap('post.dislikesCount', 'post.dislikes')
+      .where('kw.name IN (:...tags)', { tags })
+      .orderBy('post.id', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }
 }

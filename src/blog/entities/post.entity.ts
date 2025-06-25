@@ -6,12 +6,15 @@ import {
   OneToMany,
   RelationId,
   RelationCount,
+  ManyToMany,
+  JoinTable,
 } from 'typeorm';
 import { Exclude, Expose } from 'class-transformer';
 import { Comment } from './comment.entity';
 import { User } from '../../users/user.entity';
 import { Like } from './like.entity';
 import { Dislike } from './dislike.entity';
+import { Keyword } from './keyword.entity';
 
 @Entity()
 export class Post {
@@ -48,4 +51,8 @@ export class Post {
   @RelationId((post: Post) => post.author)
   @Expose()
   authorId: number;
+
+  @ManyToMany(() => Keyword, (kw) => kw.posts, { cascade: ['insert'] })
+  @JoinTable({ name: 'post_keywords' })
+  keywords: Keyword[];
 }

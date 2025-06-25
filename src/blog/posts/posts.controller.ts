@@ -28,6 +28,8 @@ import { Comment } from '../entities/comment.entity';
 import { GetUser } from '../../auth/get-user.decorator';
 import { User } from '../../users/user.entity';
 import { GetPostsFilterDto } from './dto/get-posts-filter.dto';
+import { GetPostsByKeywordsDto } from './dto/get-posts-by-keywords.dto';
+import { CreatePostDto } from './dto/create-post.dto';
 
 @ApiTags('Posts')
 @ApiExtraModels(PostEntity)
@@ -114,13 +116,12 @@ export class PostsController {
   })
   @UseGuards(JwtAuthGuard)
   @HttpPost()
-  async create(
+  /*async create(
     @Body() body: { title: string; description: string },
     @GetUser() user: User,
   ): Promise<PostEntity> {
     return this.postsService.create(body, user);
-  }
-
+  }*/
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Обновление поста (только своим автором)' })
   @ApiParam({ name: 'id', type: Number, description: 'ID поста', example: 1 })
@@ -313,5 +314,52 @@ export class PostsController {
     @GetUser() user: User,
   ): Promise<void> {
     await this.postsService.undislike(id, user);
+  }
+
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Создание поста с ключевыми словами' })
+  @ApiBody({ type: CreatePostDto })
+  @ApiResponse({ status: 201, type: PostEntity })
+  @UseGuards(JwtAuthGuard)
+  @HttpPost()
+  async create(
+    @Body() dto: CreatePostDto,
+    @GetUser() user: User,
+  ): Promise<PostEntity> {
+    return this.postsService.create(dto, user);
+  }
+
+  @ApiOperation({
+    summary: 'Поиск по ключевым словам (только по полю keywords) + пагинация',
+  })
+  @ApiQuery({
+    name: 'keywords',
+    required: true,
+    description: 'Список тегов через запятую, напр. "nestjs,typeorm"',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(PostEntity) },
+        },
+        total: { type: 'number' },
+        page: { type: 'number' },
+        limit: { type: 'number' },
+      },
+    },
+  })
+  @Get('search/keywords')
+  async searchByKeywords(@Query() dto: GetPostsByKeywordsDto): Promise<{
+    data: PostEntity[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    return this.postsService.findByKeywords(dto);
   }
 }
