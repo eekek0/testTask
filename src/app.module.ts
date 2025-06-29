@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
 import { BlogModule } from './blog/blog.module';
-import { User } from './users/user.entity';
-import { Post } from './blog/entities/post.entity';
-import { Comment } from './blog/entities/comment.entity';
 
 @Module({
   imports: [
@@ -15,12 +13,12 @@ import { Comment } from './blog/entities/comment.entity';
       username: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASS || 'password',
       database: process.env.DB_NAME || 'blog_db',
-      entities: [User, Post, Comment],
       autoLoadEntities: true,
       synchronize: true,
       dropSchema: true,
     }),
     AuthModule,
+    UsersModule,
     BlogModule,
   ],
 })

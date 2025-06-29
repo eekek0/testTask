@@ -1,317 +1,107 @@
 import {
   Controller,
   Get,
-  Post as HttpPost,
-  Put,
+  Post,
+  Patch,
   Delete,
   Param,
   Body,
-  UseGuards,
   Query,
+  UseGuards,
   ParseIntPipe,
 } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
+  ApiBearerAuth,
+  ApiResponse,
   ApiParam,
   ApiBody,
-  ApiResponse,
-  ApiBearerAuth,
   ApiQuery,
-  ApiExtraModels,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { PostsService } from './posts.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { Post as PostEntity } from '../entities/post.entity';
-import { Comment } from '../entities/comment.entity';
 import { GetUser } from '../../auth/get-user.decorator';
 import { User } from '../../users/user.entity';
-import { GetPostsFilterDto } from './dto/get-posts-filter.dto';
+import { Post as PostEntity } from '../entities/post.entity';
+import { CreatePostDto } from './dto/create-post.dto';
+import { UpdatePostDto } from './dto/update-post.dto';
+import { FilterPostDto } from './dto/filter-post.dto';
 
 @ApiTags('Posts')
-@ApiExtraModels(PostEntity)
 @Controller('posts')
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
-  @ApiOperation({
-    summary: 'Список постов (фильтр по title + 1 на странице)',
+  @ApiOperation({ summary: 'Список постов (или only popular)' })
+  @ApiQuery({
+    name: 'popular',
+    type: Boolean,
+    required: false,
+    description: 'true — только posts, где likes>dislikes',
   })
-  @ApiQuery({ name: 'search', required: false, description: 'По title' })
-  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
-  @ApiResponse({
-    status: 200,
-    description: 'Пагинированный список постов',
-    schema: {
-      type: 'object',
-      properties: {
-        data: {
-          type: 'array',
-          items: { $ref: getSchemaPath(PostEntity) },
-        },
-        total: { type: 'number', example: 42 },
-        page: { type: 'number', example: 2 },
-        limit: { type: 'number', example: 1 },
-      },
-    },
-  })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   @Get()
-  async getAll(@Query() filterDto: GetPostsFilterDto): Promise<{
-    data: PostEntity[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
-    return this.postsService.findAll(filterDto);
+  findAll(@Query() filter: FilterPostDto) {
+    return this.postsService.findAll(filter);
   }
 
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Получение списка постов текущего пользователя' })
-  @ApiResponse({
-    status: 200,
-    description: 'Список постов текущего пользователя',
-    type: [PostEntity],
-  })
+  @ApiOperation({ summary: 'Посты текущего пользователя' })
+  @ApiResponse({ status: 200, type: [PostEntity] })
   @UseGuards(JwtAuthGuard)
   @Get('my')
-  async getMyPosts(@GetUser() user: User): Promise<PostEntity[]> {
+  findMy(@GetUser() user: User) {
     return this.postsService.findByAuthor(user);
   }
 
-  @ApiOperation({ summary: 'Получение поста по ID' })
-  @ApiParam({ name: 'id', type: Number, description: 'ID поста', example: 1 })
-  @ApiResponse({
-    status: 200,
-    description: 'Пост найден',
-    type: PostEntity,
-  })
-  @ApiResponse({ status: 404, description: 'Пост не найден.' })
+  @ApiOperation({ summary: 'Получить пост по ID' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, type: PostEntity })
   @Get(':id')
-  async getOne(@Param('id', ParseIntPipe) id: number): Promise<PostEntity> {
+  findOne(@Param('id', ParseIntPipe) id: number) {
     return this.postsService.findOne(id);
   }
 
   @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Создание нового поста (автоматическое указание автора)',
-  })
-  @ApiBody({
-    description: 'Данные для создания поста',
-    schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', example: 'Новый пост' },
-        description: { type: 'string', example: 'Описание поста' },
-      },
-      required: ['title', 'description'],
-    },
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Пост успешно создан',
-    type: PostEntity,
-  })
+  @ApiOperation({ summary: 'Создать новый пост' })
+  @ApiBody({ type: CreatePostDto })
+  @ApiResponse({ status: 201, type: PostEntity })
   @UseGuards(JwtAuthGuard)
-  @HttpPost()
-  async create(
-    @Body() body: { title: string; description: string },
-    @GetUser() user: User,
-  ): Promise<PostEntity> {
-    return this.postsService.create(body, user);
+  @Post()
+  create(@Body() dto: CreatePostDto, @GetUser() user: User) {
+    return this.postsService.create(dto, user);
   }
 
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Обновление поста (только своим автором)' })
-  @ApiParam({ name: 'id', type: Number, description: 'ID поста', example: 1 })
-  @ApiBody({
-    description: 'Данные для обновления поста',
-    schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', example: 'Обновлённый заголовок' },
-        description: { type: 'string', example: 'Обновлённое описание' },
-      },
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Пост обновлён',
-    type: PostEntity,
-  })
+  @ApiOperation({ summary: 'Обновить пост' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiBody({ type: UpdatePostDto })
+  @ApiResponse({ status: 200, type: PostEntity })
   @UseGuards(JwtAuthGuard)
-  @Put(':id')
-  async update(
+  @Patch(':id')
+  update(
     @Param('id', ParseIntPipe) id: number,
-    @Body() updateData: { title?: string; description?: string },
+    @Body() dto: UpdatePostDto,
     @GetUser() user: User,
-  ): Promise<PostEntity> {
-    return this.postsService.update(id, updateData, user);
+  ) {
+    return this.postsService.update(id, dto, user);
   }
 
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Удаление поста (только своим автором)' })
-  @ApiParam({ name: 'id', type: Number, description: 'ID поста', example: 1 })
-  @ApiResponse({
-    status: 200,
-    description: 'Пост успешно удалён',
-  })
+  @ApiOperation({ summary: 'Удалить пост' })
+  @ApiParam({ name: 'id', type: Number })
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
-  async delete(
-    @Param('id', ParseIntPipe) id: number,
-    @GetUser() user: User,
-  ): Promise<void> {
+  remove(@Param('id', ParseIntPipe) id: number, @GetUser() user: User) {
     return this.postsService.remove(id, user);
   }
 
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Добавление комментария к посту (автоматическое указание автора)',
-  })
-  @ApiParam({
-    name: 'id',
-    type: Number,
-    description: 'ID поста, к которому добавляется комментарий',
-    example: 1,
-  })
-  @ApiBody({
-    description: 'Данные нового комментария',
-    schema: {
-      type: 'object',
-      properties: {
-        text: { type: 'string', example: 'Комментарий к посту' },
-      },
-      required: ['text'],
-    },
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Комментарий успешно добавлен',
-    type: Comment,
-  })
-  @UseGuards(JwtAuthGuard)
-  @HttpPost(':id/comments')
-  async addComment(
-    @Param('id', ParseIntPipe) postId: number,
-    @Body() body: { text: string },
-    @GetUser() user: User,
-  ): Promise<Comment> {
-    return this.postsService.addComment(postId, body.text, user);
-  }
-
-  @ApiBearerAuth()
-  @ApiOperation({
-    summary: 'Редактирование комментария (только своим автором)',
-  })
-  @ApiParam({
-    name: 'commentId',
-    type: Number,
-    description: 'ID комментария для редактирования',
-    example: 1,
-  })
-  @ApiBody({
-    description: 'Новый текст комментария',
-    schema: {
-      type: 'object',
-      properties: {
-        text: { type: 'string', example: 'Обновлённый комментарий' },
-      },
-      required: ['text'],
-    },
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Комментарий успешно обновлён',
-    type: Comment,
-  })
-  @UseGuards(JwtAuthGuard)
-  @Put('comments/:commentId')
-  async updateComment(
-    @Param('commentId', ParseIntPipe) commentId: number,
-    @Body() body: { text: string },
-    @GetUser() user: User,
-  ): Promise<Comment> {
-    return this.postsService.updateComment(commentId, body.text, user);
-  }
-
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Удаление комментария (только своим автором)' })
-  @ApiParam({
-    name: 'commentId',
-    type: Number,
-    description: 'ID комментария для удаления',
-    example: 1,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Комментарий успешно удалён',
-  })
-  @UseGuards(JwtAuthGuard)
-  @Delete('comments/:commentId')
-  async removeComment(
-    @Param('commentId', ParseIntPipe) commentId: number,
-    @GetUser() user: User,
-  ): Promise<void> {
-    return this.postsService.removeComment(commentId, user);
-  }
-
-  @ApiOperation({ summary: 'Получение комментариев поста' })
-  @ApiParam({
-    name: 'id',
-    type: Number,
-    description: 'ID поста для получения его комментариев',
-    example: 1,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Список комментариев',
-    type: [Comment],
-  })
-  @Get(':id/comments')
-  async getComments(
-    @Param('id', ParseIntPipe) postId: number,
-  ): Promise<Comment[]> {
-    return this.postsService.getComments(postId);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @HttpPost(':id/like')
-  async like(
-    @Param('id', ParseIntPipe) id: number,
-    @GetUser() user: User,
-  ): Promise<void> {
-    await this.postsService.like(id, user);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Delete(':id/like')
-  async unlike(
-    @Param('id', ParseIntPipe) id: number,
-    @GetUser() user: User,
-  ): Promise<void> {
-    await this.postsService.unlike(id, user);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @HttpPost(':id/dislike')
-  async dislike(
-    @Param('id', ParseIntPipe) id: number,
-    @GetUser() user: User,
-  ): Promise<void> {
-    await this.postsService.dislike(id, user);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
-  @Delete(':id/dislike')
-  async undislike(
-    @Param('id', ParseIntPipe) id: number,
-    @GetUser() user: User,
-  ): Promise<void> {
-    await this.postsService.undislike(id, user);
+  @Get('by-tag/:name')
+  @ApiOperation({ summary: 'Посты по тегу' })
+  @ApiParam({ name: 'name', description: 'Имя тега без #' })
+  async findByTag(@Param('name') name: string): Promise<PostEntity[]> {
+    return this.postsService.findAllByTag(name.toLowerCase());
   }
 }

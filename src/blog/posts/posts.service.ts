@@ -4,16 +4,19 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Post } from '../entities/post.entity';
-import { Comment } from '../entities/comment.entity';
 import { User } from '../../users/user.entity';
-import { Like } from '../entities/like.entity';
+import { Comment } from '../entities/comment.entity';
+import { CreatePostDto } from './dto/create-post.dto';
+import { UpdatePostDto } from './dto/update-post.dto';
+import { FilterPostDto } from './dto/filter-post.dto';
 import { Dislike } from '../entities/dislike.entity';
-import { GetPostsFilterDto } from './dto/get-posts-filter.dto';
+import { Like } from '../entities/like.entity';
+import { Tag } from '../entities/tag.entity';
 
-export interface PaginatedPosts {
-  data: Post[];
+export interface Paginated<T> {
+  items: T[];
   total: number;
   page: number;
   limit: number;
@@ -22,213 +25,152 @@ export interface PaginatedPosts {
 @Injectable()
 export class PostsService {
   constructor(
-    @InjectRepository(Post)
-    private readonly postRepository: Repository<Post>,
-    @InjectRepository(Comment)
-    private readonly commentRepository: Repository<Comment>,
-    @InjectRepository(User)
-    private readonly userRepository: Repository<User>,
-    @InjectRepository(Like)
-    private likeRepo: Repository<Like>,
-    @InjectRepository(Dislike)
-    private dislikeRepo: Repository<Dislike>,
+    @InjectRepository(Post) private postsRepo: Repository<Post>,
+    @InjectRepository(User) private usersRepo: Repository<User>,
+    @InjectRepository(Tag) private tagsRepo: Repository<Tag>,
   ) {}
 
-  async create(
-    postData: { title: string; description: string },
-    user: User,
-  ): Promise<Post> {
-    const author = await this.userRepository.findOne({
-      where: { id: user.id },
+  async create(dto: CreatePostDto, user: User): Promise<Post> {
+    const author = await this.findUserOrFail(user.id);
+
+    const tags = dto.tags?.map((name) => name.trim().toLowerCase()) || [];
+    const tagEntities = await Promise.all(
+      tags.map(async (name) => {
+        let t = await this.tagsRepo.findOneBy({ name });
+        if (!t) t = this.tagsRepo.create({ name });
+        return t;
+      }),
+    );
+    const post = this.postsRepo.create({
+      title: dto.title,
+      description: dto.description,
+      author,
+      tags: tagEntities,
     });
-    if (!author) {
-      throw new NotFoundException('Автор не найден');
-    }
-    const post = this.postRepository.create({ ...postData, author });
-    return await this.postRepository.save(post);
+    return this.postsRepo.save(post);
   }
 
-  async findAll(filterDto: GetPostsFilterDto): Promise<PaginatedPosts> {
-    const { search, page = 1 } = filterDto;
-    const limit = 1;
-    const skip = (page - 1) * limit;
+  async findAllByTag(name: string): Promise<Post[]> {
+    return this.postsRepo
+      .createQueryBuilder('post')
+      .leftJoinAndSelect('post.tags', 'tag')
+      .leftJoinAndSelect('post.author', 'author')
+      .where('tag.name = :name', { name })
+      .getMany();
+  }
 
-    const where = search ? { title: ILike(`%${search}%`) } : {};
+  async findAll(filter: FilterPostDto): Promise<Paginated<Post>> {
+    const { page, limit } = filter;
+    const qb = this.buildFilterQuery(filter)
+      .skip((page - 1) * limit)
+      .take(limit);
 
-    const [data, total] = await this.postRepository.findAndCount({
-      where,
-      skip,
-      take: limit,
-      relations: ['author', 'comments'],
-    });
+    const [items, total] = await qb.getManyAndCount();
 
-    return { data, total, page, limit };
+    items.forEach(
+      (p) =>
+        (p.comments = this.sanitizeComments(
+          p.comments,
+        ) as unknown as Comment[]),
+    );
+
+    return { items, total, page, limit };
   }
 
   async findByAuthor(user: User): Promise<Post[]> {
-    return await this.postRepository.find({
+    const posts = await this.postsRepo.find({
       where: { author: { id: user.id } },
-      relations: ['comments', 'author'],
+      relations: ['author', 'comments', 'comments.author', 'likes', 'dislikes'],
     });
+
+    posts.forEach(
+      (post) =>
+        (post.comments = this.sanitizeComments(
+          post.comments,
+        ) as unknown as Comment[]),
+    );
+
+    return posts;
   }
 
   async findOne(id: number): Promise<Post> {
-    const post = await this.postRepository.findOne({
+    const post = await this.postsRepo.findOne({
       where: { id },
-      relations: ['comments', 'author'],
+      relations: ['author', 'comments', 'comments.author', 'likes', 'dislikes'],
     });
-    if (!post) {
-      throw new NotFoundException('Post not found');
-    }
+    if (!post) throw new NotFoundException(`Post ${id} not found`);
+
+    post.comments = this.sanitizeComments(
+      post.comments,
+    ) as unknown as Comment[];
     return post;
   }
 
-  async update(
-    id: number,
-    updateData: Partial<Post>,
-    user: User,
-  ): Promise<Post> {
+  async update(id: number, dto: UpdatePostDto, user: User): Promise<Post> {
     const post = await this.findOne(id);
-    const authorId = post.author?.id;
-    if (authorId === undefined || authorId !== user.id) {
-      throw new ForbiddenException('You are not allowed to update this post');
-    }
-    await this.postRepository.update(id, updateData);
-    return await this.findOne(id);
+    this.ensureOwner(post.author.id, user.id, 'update this post');
+    Object.assign(post, dto);
+    return this.postsRepo.save(post);
   }
 
   async remove(id: number, user: User): Promise<void> {
     const post = await this.findOne(id);
-    const authorId = post.author?.id;
-    if (authorId === undefined || authorId !== user.id) {
-      throw new ForbiddenException('You are not allowed to delete this post');
-    }
-    await this.postRepository.delete(id);
+    this.ensureOwner(post.author.id, user.id, 'delete this post');
+    await this.postsRepo.delete(id);
   }
 
-  async addComment(postId: number, text: string, user: User): Promise<Comment> {
-    const post = await this.findOne(postId);
-    const author = await this.userRepository.findOne({
-      where: { id: user.id },
-    });
-    if (!author) {
-      throw new NotFoundException('Автор не найден');
-    }
-    const comment = this.commentRepository.create({ text, post, author });
-    return await this.commentRepository.save(comment);
-  }
+  private buildFilterQuery(filter: FilterPostDto): SelectQueryBuilder<Post> {
+    const qb = this.postsRepo
+      .createQueryBuilder('post')
+      .leftJoinAndSelect('post.author', 'author')
+      .leftJoinAndSelect('post.comments', 'comments')
+      .leftJoinAndSelect('comments.author', 'commentAuthor')
+      .loadRelationCountAndMap('post.likesCount', 'post.likes')
+      .loadRelationCountAndMap('post.dislikesCount', 'post.dislikes');
 
-  async getComments(postId: number): Promise<Comment[]> {
-    const post = await this.findOne(postId);
-    return post.comments;
-  }
-
-  async updateComment(
-    commentId: number,
-    newText: string,
-    user: User,
-  ): Promise<Comment> {
-    const commentRaw: unknown = await this.commentRepository.findOne({
-      where: { id: commentId },
-      relations: ['author'],
-    });
-    const comment = commentRaw as Comment | null;
-    if (!comment) {
-      throw new NotFoundException('Comment not found');
-    }
-    const commentAuthor = comment.author as User | null;
-    if (!commentAuthor || commentAuthor.id !== user.id) {
-      throw new ForbiddenException(
-        'You are not allowed to update this comment',
-      );
-    }
-    comment.text = newText;
-    const updatedRaw: unknown = await this.commentRepository.save(comment);
-    return updatedRaw as Comment;
-  }
-
-  async removeComment(commentId: number, user: User): Promise<void> {
-    const commentRaw: unknown = await this.commentRepository.findOne({
-      where: { id: commentId },
-      relations: ['author'],
-    });
-    const comment = commentRaw as Comment | null;
-    if (!comment) {
-      throw new NotFoundException('Comment not found');
-    }
-    const commentAuthor = comment.author as User | null;
-    if (!commentAuthor || commentAuthor.id !== user.id) {
-      throw new ForbiddenException(
-        'You are not allowed to delete this comment',
-      );
-    }
-    await this.commentRepository.delete(commentId);
-  }
-
-  async like(postId: number, user: User): Promise<void> {
-    await this.dislikeRepo.delete({
-      post: { id: postId },
-      author: { id: user.id },
-    });
-    const exists = await this.likeRepo.findOne({
-      where: { post: { id: postId }, author: { id: user.id } },
-    });
-    if (!exists) {
-      const like = this.likeRepo.create({
-        post: { id: postId } as Post,
-        author: user,
+    if (filter.popular) {
+      qb.andWhere((qb) => {
+        const likes = qb
+          .subQuery()
+          .select('COUNT(*)')
+          .from(Like, 'l')
+          .where('l.postId = post.id')
+          .getQuery();
+        const dislikes = qb
+          .subQuery()
+          .select('COUNT(*)')
+          .from(Dislike, 'd')
+          .where('d.postId = post.id')
+          .getQuery();
+        return `${likes} > ${dislikes}`;
       });
-      await this.likeRepo.save(like);
     }
+
+    return qb;
+  }
+  private sanitizeComments(
+    comments: Comment[],
+  ): { id: number; text: string; authorId: number }[] {
+    return comments.map((c) => ({
+      id: c.id,
+      text: c.text,
+      authorId: c.author.id,
+    }));
   }
 
-  async unlike(postId: number, user: User): Promise<void> {
-    await this.likeRepo.delete({
-      post: { id: postId },
-      author: { id: user.id },
-    });
+  private async findUserOrFail(id: number): Promise<User> {
+    const user = await this.usersRepo.findOne({ where: { id } });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 
-  async dislike(postId: number, user: User): Promise<void> {
-    await this.likeRepo.delete({
-      post: { id: postId },
-      author: { id: user.id },
-    });
-    const exists = await this.dislikeRepo.findOne({
-      where: { post: { id: postId }, author: { id: user.id } },
-    });
-    if (!exists) {
-      const dislike = this.dislikeRepo.create({
-        post: { id: postId } as Post,
-        author: user,
-      });
-      await this.dislikeRepo.save(dislike);
+  private ensureOwner(
+    ownerId: number,
+    currentId: number,
+    action: string,
+  ): void {
+    if (ownerId !== currentId) {
+      throw new ForbiddenException(`You are not allowed to ${action}`);
     }
-  }
-
-  async undislike(postId: number, user: User): Promise<void> {
-    await this.dislikeRepo.delete({
-      post: { id: postId },
-      author: { id: user.id },
-    });
-  }
-
-  async findAllWithFilter(
-    filterDto: GetPostsFilterDto,
-  ): Promise<PaginatedPosts> {
-    const { search, page = 1 } = filterDto;
-    const limit = 1;
-    const skip = (page - 1) * limit;
-
-    const where = search ? { title: ILike(`%${search}%`) } : {};
-
-    const [data, total] = await this.postRepository.findAndCount({
-      where,
-      skip,
-      take: limit,
-      relations: ['author', 'comments'],
-    });
-
-    return { data, total, page, limit };
   }
 }

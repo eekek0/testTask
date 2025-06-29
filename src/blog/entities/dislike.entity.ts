@@ -1,16 +1,16 @@
-import { Entity, PrimaryGeneratedColumn, ManyToOne, Unique } from 'typeorm'
-import { User } from '../../users/user.entity'
-import { Post } from './post.entity'
+import { Entity, PrimaryGeneratedColumn, ManyToOne, Unique } from 'typeorm';
+import { User } from '../../users/user.entity';
+import { Post } from './post.entity';
 
 @Entity()
 @Unique(['post', 'author'])
 export class Dislike {
   @PrimaryGeneratedColumn()
-  id: number
+  id: number;
 
   @ManyToOne(() => Post, (post) => post.dislikes, { onDelete: 'CASCADE' })
-  post: Post
+  post: Post;
 
   @ManyToOne(() => User, (user) => user.dislikes, { onDelete: 'CASCADE' })
-  author: User
+  author: User;
 }
