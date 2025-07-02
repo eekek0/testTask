@@ -9,12 +9,13 @@ import {
 
 export class CreatePostDto {
   @ApiProperty({ example: 'Новый пост' })
-  @IsString() @Length(3, 100)
-  title: string;
+  @IsString()
+  @Length(3, 100)
+  title!: string;
 
   @ApiProperty({ example: 'Описание поста' })
   @IsString()
-  description: string;
+  description!: string;
 
   @ApiPropertyOptional({
     description: 'Список тегов (без #) для поста',
