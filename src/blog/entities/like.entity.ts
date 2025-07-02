@@ -6,11 +6,11 @@ import { Post } from './post.entity';
 @Unique(['post', 'author'])
 export class Like {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @ManyToOne(() => Post, (post) => post.likes, { onDelete: 'CASCADE' })
-  post: Post;
+  post!: Post;
 
   @ManyToOne(() => User, (user) => user.likes, { onDelete: 'CASCADE' })
-  author: User;
+  author!: User;
 }

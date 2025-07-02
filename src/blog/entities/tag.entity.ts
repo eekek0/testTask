@@ -10,12 +10,12 @@ import { Post } from './post.entity';
 @Entity()
 export class Tag {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Index({ unique: true })
   @Column({ length: 50 })
-  name: string;
+  name!: string;
 
   @ManyToMany(() => Post, (post) => post.tags)
-  posts: Post[];
+  posts!: Post[];
 }
