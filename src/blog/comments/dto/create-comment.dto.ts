@@ -9,5 +9,5 @@ export class CreateCommentDto {
   })
   @IsString()
   @Length(1, 500)
-  text: string;
+  text!: string;
 }
