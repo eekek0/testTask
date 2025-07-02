@@ -7,22 +7,22 @@ import { Dislike } from '../blog/entities/dislike.entity';
 @Entity()
 export class User {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column({ unique: true })
-  username: string;
+  username!: string;
 
   @Column()
-  password: string;
+  password!: string;
 
   @OneToMany(() => Post, (post) => post.author)
-  posts: Post[];
+  posts!: Post[];
 
   @OneToMany(() => Comment, (comment) => comment.author)
-  comments: Comment[];
+  comments!: Comment[];
   @OneToMany(() => Like, (like) => like.author, { cascade: true })
-  likes: Like[];
+  likes!: Like[];
 
   @OneToMany(() => Dislike, (dislike) => dislike.author, { cascade: true })
-  dislikes: Dislike[];
+  dislikes!: Dislike[];
 }

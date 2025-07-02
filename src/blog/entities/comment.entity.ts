@@ -5,14 +5,14 @@ import { User } from 'src/users/user.entity';
 @Entity()
 export class Comment {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column({ type: 'text' })
-  text: string;
+  text!: string;
 
   @ManyToOne(() => Post, (post) => post.comments)
-  post: Post;
+  post!: Post;
 
   @ManyToOne(() => User, (user) => user.comments, { nullable: false })
-  author: User;
+  author!: User;
 }

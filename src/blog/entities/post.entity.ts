@@ -19,38 +19,38 @@ import { Tag } from './tag.entity';
 @Entity()
 export class Post {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column()
-  title: string;
+  title!: string;
 
   @Column({ type: 'text' })
-  description: string;
+  description!: string;
 
   @OneToMany(() => Comment, (comment) => comment.post, { cascade: true })
-  comments: Comment[];
+  comments!: Comment[];
 
   @OneToMany(() => Like, (like) => like.post, { cascade: true })
-  likes: Like[];
+  likes!: Like[];
 
   @RelationCount((post: Post) => post.likes)
   @Expose()
-  likesCount: number;
+  likesCount!: number;
 
   @OneToMany(() => Dislike, (dislike) => dislike.post, { cascade: true })
-  dislikes: Dislike[];
+  dislikes!: Dislike[];
 
   @RelationCount((post: Post) => post.dislikes)
   @Expose()
-  dislikesCount: number;
+  dislikesCount!: number;
 
   @ManyToOne(() => User, (user) => user.posts)
   @Exclude()
-  author: User;
+  author!: User;
 
   @RelationId((post: Post) => post.author)
   @Expose()
-  authorId: number;
+  authorId!: number;
 
   @ManyToMany(() => Tag, (tag) => tag.posts, {
     cascade: ['insert', 'update'],
@@ -61,5 +61,5 @@ export class Post {
     joinColumn: { name: 'postId', referencedColumnName: 'id' },
     inverseJoinColumn: { name: 'tagId', referencedColumnName: 'id' },
   })
-  tags: Tag[];
+  tags!: Tag[];
 }
